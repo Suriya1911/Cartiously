@@ -1373,10 +1373,9 @@ if 'products_data' in st.session_state and st.session_state.products_data:
                         cheapest_item = min(chart_data_single, key=lambda x: x['Price_Numeric'])
                         expensive_item = max(chart_data_single, key=lambda x: x['Price_Numeric'])
                         savings_amount = expensive_item['Price_Numeric'] - cheapest_item['Price_Numeric']
-                        
-                       
+
                         # Deal cards - centered on page
-                    st.markdown(f"""
+                        st.markdown(f"""
 <div style='width: 100%; display: flex; justify-content: center;'>
     <div style='display: flex; gap: 1rem; margin: 1.5rem 0;'>
         <div class='deal-card best'>
@@ -1396,7 +1395,10 @@ if 'products_data' in st.session_state and st.session_state.products_data:
         </div>
     </div>
 </div>
-""", unsafe_allow_html=True)                
+""", unsafe_allow_html=True)
+                    else:
+                        st.info("Only one store has this item, so there's nothing to compare yet.")
+
                 # Results table for this specific search term
                 st.markdown(f"#### All {search_term.title()} Results")
                 results_df_single = pd.DataFrame(single_term_results)
