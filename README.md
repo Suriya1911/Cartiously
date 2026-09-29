@@ -4,7 +4,7 @@
 
 Cartiously reads grocery store flyers using AI, pulls out every product and price, and shows you where each item is cheapest.
 
-## 👉 [Try Cartiously Live](LIVE-APP-LINK)
+## 👉 https://cartiously-ezw5ulrdgnall262d5zn3y.streamlit.app/
 
 No download or sign-up needed. It runs in your browser.
 
