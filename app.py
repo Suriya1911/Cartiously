@@ -888,8 +888,13 @@ with col3:
 
 st.markdown("<div style='margin: 2rem 0;'></div>", unsafe_allow_html=True)
 
-# Load API key from environment variable
+# Load API key: first from the local .env file, then from Streamlit Cloud secrets
 api_key = os.getenv('GEMINI_API_KEY')
+if not api_key:
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        api_key = None
 
 if not api_key:
     st.markdown("""
