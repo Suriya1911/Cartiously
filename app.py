@@ -403,9 +403,18 @@ def convert_image_to_text(image, api_key, max_retries=3):
     import time
 
     try:
-        # Convert image to base64
+        # Shrink large flyers before sending. Full-size PNGs can be several MB,
+        # which is slow to upload and slow for the model to process. 1600px on
+        # the longest side is still sharp enough to read prices clearly.
+        MAX_SIDE = 1600
+        image = image.copy()
+        image.thumbnail((MAX_SIDE, MAX_SIDE))
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Convert image to base64 (JPEG is much smaller than PNG for flyers)
         img_buffer = io.BytesIO()
-        image.save(img_buffer, format='PNG')
+        image.save(img_buffer, format='JPEG', quality=85)
         img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
         
         # Gemini API endpoint
@@ -444,7 +453,7 @@ def convert_image_to_text(image, api_key, max_retries=3):
 Please analyze this image thoroughly and provide all visible information in this structured format."""},
                         {
                             "inline_data": {
-                                "mime_type": "image/png",
+                                "mime_type": "image/jpeg",
                                 "data": img_base64
                             }
                         }
