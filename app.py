@@ -450,6 +450,12 @@ def convert_image_to_text(image, api_key, max_retries=3):
 **Overall Impression:**
 [Describe the design, colors, main message, and overall marketing approach]
 
+Price rules:
+* Always write prices in dollars with two decimals, e.g. $2.99.
+* Convert cent prices to dollars: 99¢ becomes $0.99, 49¢ becomes $0.49.
+* Flyers often print cents as small raised digits next to the dollars (a large 2 with a small 99). Read that as $2.99, never $299.
+* For multi-buy deals, keep the deal wording, e.g. 2 for $5.00.
+
 Please analyze this image thoroughly and provide all visible information in this structured format."""},
                         {
                             "inline_data": {
@@ -522,6 +528,38 @@ def normalize_display_case(text):
     table all inherit the same casing automatically instead of drifting."""
     return re.sub(r'\s+', ' ', text.strip()).title()
 
+def extract_price(text):
+    """Pull a single price out of a line of text and return it in dollars,
+    formatted like '$0.99'. Handles both dollar prices ('$2.99', '2.99 dollars')
+    and cent prices ('99¢', '99 cents', '99c'). Previously a cent price like
+    '99¢' had no '$' to match, so it fell through to the 'any number' fallback
+    and became '$99'. Whichever price appears first in the text wins."""
+    candidates = []
+
+    # Dollar prices: $2.99, $ 2.99, $5
+    for m in re.finditer(r'\$\s*(\d+(?:\.\d+)?)', text):
+        candidates.append((m.start(), float(m.group(1))))
+
+    # Cent prices: 99¢, 99 ¢, 99 cents, 99c
+    for m in re.finditer(r'(\d{1,3})\s*(?:¢|cents?\b)|\b(\d{1,3})c\b', text, re.IGNORECASE):
+        cents = m.group(1) or m.group(2)
+        candidates.append((m.start(), int(cents) / 100))
+
+    # Dollar prices written as words or with a trailing $: 2.99 dollars, 2.99$
+    for m in re.finditer(r'(\d+(?:\.\d+)?)\s*(?:dollars?\b|bucks?\b|\$)', text, re.IGNORECASE):
+        candidates.append((m.start(), float(m.group(1))))
+
+    if candidates:
+        value = min(candidates, key=lambda c: c[0])[1]
+        return f"${value:.2f}"
+
+    # Last resort: any number (the README lists this as a known limitation,
+    # since it can occasionally pick up a size instead of a price)
+    number_match = re.search(r'(\d+(?:\.\d+)?)', text)
+    if number_match:
+        return f"${float(number_match.group(1)):.2f}"
+    return ''
+
 def parse_flyer_data(analysis_text, filename):
     """Extract structured data from flyer analysis"""
     
@@ -587,26 +625,8 @@ def parse_flyer_data(analysis_text, filename):
                 if not product_name or not product_details or len(product_name) < 2:
                     continue
                 
-                # More flexible price extraction
-                price_patterns = [
-                    r'\$(\d+\.?\d*)',  # $5.99
-                    r'(\d+\.?\d*)\s*(?:dollars?|bucks?)',  # 5.99 dollars
-                    r'(\d+\.?\d*)\s*(?:for|each|ea)',  # 5.99 for
-                    r'(\d+\.?\d*)\s*(?:\$|dollars?)',  # 5.99$
-                ]
-                
-                price = ''
-                for pattern in price_patterns:
-                    price_match = re.search(pattern, product_details, re.IGNORECASE)
-                    if price_match:
-                        price = f"${price_match.group(1)}"
-                        break
-                
-                # If no price found, try to extract any number
-                if not price:
-                    number_match = re.search(r'(\d+\.?\d*)', product_details)
-                    if number_match:
-                        price = f"${number_match.group(1)}"
+                # Price extraction handles both dollars ($2.99) and cents (99¢)
+                price = extract_price(product_details)
                 
                 # Try to extract size/weight with more comprehensive patterns
                 size_patterns = [
@@ -676,8 +696,7 @@ def parse_flyer_data(analysis_text, filename):
                         product_name = parts[0].strip(' -*')
                         if len(product_name) > 2:  # Only if reasonable product name
                             # Try to find price in the line
-                            price_match = re.search(r'\$?(\d+\.?\d*)', line)
-                            price = f"${price_match.group(1)}" if price_match else 'Price not found'
+                            price = extract_price(line) or 'Price not found'
                             
                             flyer_data['products'].append({
                                 'product_name': normalize_display_case(product_name),
