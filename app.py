@@ -526,7 +526,12 @@ def normalize_display_case(text):
     form. Applied once, right when a product name is parsed out of the AI
     response — so the Excel export, the search dropdown, and the results
     table all inherit the same casing automatically instead of drifting."""
-    return re.sub(r'\s+', ' ', text.strip()).title()
+    # Python's .title() capitalizes after apostrophes ("Lay's" -> "Lay'S"),
+    # so capitalize each word manually and keep apostrophe parts lowercase.
+    text = re.sub(r'\s+', ' ', text.strip())
+    return re.sub(r"[A-Za-z]+(?:'[A-Za-z]+)?",
+                  lambda m: m.group(0)[0].upper() + m.group(0)[1:].lower(),
+                  text)
 
 def extract_price(text):
     """Pull a single price out of a line of text and return it in dollars,
@@ -715,12 +720,34 @@ def normalize_term(word):
     and 'BlueBerries' both become 'blueberry'. Used only inside matches_search."""
     word = word.lower().strip()
     if word.endswith('ies') and len(word) > 3:
-        word = word[:-3] + 'y'
-    elif word.endswith('es') and len(word) > 2:
-        word = word[:-2]
-    elif word.endswith('s') and len(word) > 1:
-        word = word[:-1]
+        word = word[:-3] + 'y'                      # cherries -> cherry
+    elif re.search(r'(?:s|x|z|ch|sh|o)es$', word):
+        word = word[:-2]                            # potatoes -> potato, boxes -> box
+    elif word.endswith('s') and not word.endswith('ss') and len(word) > 1:
+        word = word[:-1]                            # apples -> apple, grapes -> grape
     return word
+
+# Descriptive words that don't say what the product actually is, so they're
+# skipped when working out which products belong in the same comparison group.
+GROUPING_STOPWORDS = {
+    'fresh', 'frozen', 'organic', 'large', 'small', 'medium', 'jumbo', 'mini',
+    'extra', 'whole', 'sliced', 'assorted', 'selected', 'variety', 'value',
+    'family', 'size', 'pack', 'bag', 'box', 'bunch', 'each', 'ea', 'per',
+    'new', 'original', 'classic', 'premium', 'natural', 'product', 'of',
+    'and', 'with', 'the', 'or', 'in', 'lb', 'kg', 'g', 'ml', 'l', 'oz', 'ct',
+}
+
+def product_group_key(product_name):
+    """Group products by what they actually are, not by their first word.
+    Grouping by first word put 'Sweet Bell Peppers' and 'Sweet Potatoes'
+    together, and 'Lay's Snacks' with 'Lay's Potato Chips'. In grocery names
+    the last meaningful word is usually the item itself (peppers, potatoes,
+    chips, milk), so that becomes the group, after skipping sizes, numbers
+    and descriptive words, and collapsing plurals."""
+    words = re.findall(r"[a-zA-Z]+(?:'[a-zA-Z]+)?", product_name.lower())
+    words = [normalize_term(w) for w in words if w not in GROUPING_STOPWORDS]
+    words = [w for w in words if len(w) > 1 and w not in GROUPING_STOPWORDS]
+    return words[-1] if words else product_name.lower().strip()
 
 def matches_search(search_term, product_name):
     """Whole-word match, not substring match — so searching 'car' does NOT
@@ -814,14 +841,10 @@ def create_excel_data(all_flyer_data):
     
     # Group similar products
     for product in products_data:
-        product_name = product['Product_Name'].lower().strip()
-        # Simple grouping by first word or key terms
-        key_words = product_name.split()
-        if key_words:
-            base_name = key_words[0]
-            if base_name not in product_groups:
-                product_groups[base_name] = []
-            product_groups[base_name].append(product)
+        # Group by the item itself (e.g. 'pepper', 'potato'), not the first word
+        base_name = product_group_key(product['Product_Name'])
+        if base_name:
+            product_groups.setdefault(base_name, []).append(product)
     
     # Create comparison entries for groups with multiple stores
     for group_name, products in product_groups.items():
